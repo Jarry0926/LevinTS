@@ -46,10 +46,8 @@ private:
     
     struct node_t
     {
-        i32_t x, y;
-        f32_t depth;
-        f32_t log2policy; // policy in log_2 space
-        f32_t cost;
+        u32_t x, y, p;
+        f32_t depth, log2policy, cost;
         u32_t ctx; // from direction, bullet states
         // TODO: optimize it with HLD
         std::bitset<49> vis; // positions visited in previous search of this branch
@@ -63,11 +61,11 @@ private:
     inline auto genContextCorner(FILE* fd, u8_t* c) noexcept -> void;
 
     // [Called after reaching a goal state]
-    inline auto isSolved() noexcept -> bool;
+    inline auto isSolved(u32_t i) noexcept -> bool;
 
     // [Called after this->isSolved() returns true]
     // Trace every context and update policyabilities 
-    inline auto updatePolicy() noexcept -> void;
+    inline auto updatePolicy(u32_t i) noexcept -> void;
     
     inline auto iheapPush(f32_t v, u32_t i) noexcept -> void;
     
@@ -76,8 +74,7 @@ private:
     u32_t height, width;
     i32_t* map; // a cell corresponds to a junction at its bottom-right
     f32_t policyPool[1024][4] = {};
-    std::vector<node_t> nodePool = {{2, 2, 1.0f, 0.0f, 0, 2}};
+    std::vector<node_t> nodePool = {{2, 2, 0, 1.0f, 0.0f, 0.0f}};
     std::vector<u32_t> iheap = {0, 0};
-    std::priority_queue<u32_t> _iheap;
 
 };

@@ -88,16 +88,20 @@ auto Witness::LoadMap(const char* p_FileName) noexcept -> void
 auto Witness::Learn() noexcept -> bool
 {
     auto& np = this->nodePool;
-    auto& ih = this->_iheap; //auto& ih = this->iheap;
-    i8_t* mp = this->map;
-    i32_t h = this->height, w = this->width;
+    auto cmp = [&np](u32_t i, u32_t j) -> bool {
+        return np[i].cost > np[j].cost;
+    };
+    std::priority_queue<u32_t, std::vector<u32_t>, decltype(cmp)> ih(cmp); //auto& ih = this->iheap;
+    i32_t* mp = this->map;
+    u32_t h = this->height, w = this->width;
     ih.push(0); //
     while (ih.size() > 1) {
-        auto [x, y, d, lp, c, ctx, vis] = np[ih.top()]; ih.pop(); //auto [x, y, d, lp, c, ctx] = np[ih[1]]; this->iheapPop(1);
+        u32_t ti = ih.top(); //u32_t ti = ih[1];
+        auto [x, y, p, d, lp, c, ctx, vis] = np[ti]; ih.pop(); //this->iheapPop(1);
         // Reach a goal state
-        if (x == w - 2 && y == h - 2) {
-            bool s = this->isSolved();
-            if (s) this->updatePolicy();
+        if (x + 2 == w && y + 2 == h) {
+            bool s = this->isSolved(ti);
+            if (s) this->updatePolicy(ti);
             return s;
         }
         // Expand current node
@@ -107,16 +111,15 @@ auto Witness::Learn() noexcept -> bool
             if (mp[j] == 3 || vis[j]) continue; // skip out of map and visited states
             auto nvis = vis; nvis[j] = 1;
             // handle visited cases
-            u32_t m[4] = {mp[j], mp[j + 1], mp[j + w + 1], mp[j + w]};
+            i32_t m[4] = {mp[j], mp[j + 1], mp[j + w + 1], mp[j + w]};
             if (vis[j - w]) m[0] = m[1] = 3;
             if (vis[j + 1]) m[1] = m[2] = 3;
             if (vis[j + w]) m[2] = m[3] = 3;
             if (vis[j - 1]) m[3] = m[0] = 3;
-            
             u32_t nctx = FROM[i] << 8 | m[0] << 6 | m[1] << 4 | m[2] << 2 | m[3];
             f32_t nd = d + 1.0f, nlp = lp + log2f(this->policyPool[ctx][i]), nc = log2f(nd) - nlp;
             ih.push(np.size()); //this->iheapPush(newCost, np.size());
-            np.emplace_back(nx, ny, nd, nlp, nc, nctx, std::move(nvis));
+            np.emplace_back(nx, ny, ti, nd, nlp, nc, nctx, std::move(nvis));
         }
     } return false;
 }
@@ -182,14 +185,64 @@ inline auto Witness::genContextCorner(FILE* fd, u8_t* c) noexcept -> void
 
 #undef FOR
 
-inline auto Witness::isSolved() noexcept -> bool
+inline auto Witness::isSolved(u32_t i) noexcept -> bool
 {
+    auto& np = this->nodePool;
+    u32_t h = this->height, w = this->width;
+    std::vector<std::pair<u32_t, u32_t>> wall(w * h, {0, 0});
+    while (1) {
+        u32_t pi = np[i].p;
+        u32_t x = np[i].x, y = np[i].y;
+        u32_t px = np[pi].x, py = np[pi].y;
+        if (px == x - 1) wall[i].second = 1;
+        else if (px == x + 1) wall[pi].second = 1;
+        else if (py == y - 1) wall[i].first = 1;
+        else wall[i].second = 1;
+        if (i == 0) break;
+        i = pi;
+    }
+    std::queue<u32_t> bfs; bfs.push(2 * w + 2);
+    std::vector<u32_t> start;
+    u32_t cnt[3] = {};
+    while (!bfs.empty() && start.size() == 0) {
+        u32_t ti = bfs.front(); bfs.pop();
+        if (wall[ti].first == 0 || map[ti + 1] != 3)
+            bfs.push(ti + 1), cnt[map[ti + 1]] = 1;
+        else if (wall[ti].first == 1)
+            start.push_back(ti + 1);
+        if (wall[ti].second == 0 || map[ti + w] != 3)
+            bfs.push(ti + w), cnt[map[ti + w]] = 1;
+        else if (wall[ti].second == 1)
+            start.push_back(ti + w);
+        if (bfs.empty()) {
+            if (cnt[1] && cnt[2]) {
+                printf("1.\n");
+                return false;
+            }
+            cnt[1] = cnt[2] = 0;
+            bfs.push(start.back()), start.pop_back();
+        }
+    }
     return true;
 }
 
-inline auto Witness::updatePolicy() noexcept -> void
+inline auto Witness::updatePolicy(u32_t i) noexcept -> void
 {
-    
+    auto& np = this->nodePool;
+    while (1) {
+        u32_t pi = np[i].p;
+        u32_t x = np[i].x, y = np[i].y;
+        u32_t px = np[pi].x, py = np[pi].y;
+        u32_t ctx = np[i].ctx;
+        u32_t pctx = np[pi].ctx;
+        auto& pp = this->policyPool[pctx];
+        if (px == x - 1) pp[1] += 1.0;
+        else if (px == x + 1) pp[3] += 1.0;
+        else if (py == y - 1) pp[0] += 1.0;
+        else pp[2] += 1.0;
+        if (i == 0) break;
+        i = pi;
+    }
 }
 
 inline auto Witness::iheapPush(f32_t v, u32_t i) noexcept -> void
